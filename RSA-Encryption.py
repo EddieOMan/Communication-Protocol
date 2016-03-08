@@ -2,7 +2,7 @@
 import re
 import random
 
-dataIn = "".join([chr(random.randint(64,90)) for x in range(100000)])#input()
+dataIn = "".join([chr(random.randint(0,220)) for x in range(100000)])#input()
 dataInList = list(dataIn)
 
 pubKey = 13*17
@@ -21,7 +21,7 @@ encry = "".join(encry)
 
 #-----------------------Intercept-----------------#
 intercept = []
-encry = re.findall("....", encry)
+encry = encry.split("0x")[:0:-1][::-1]
 for x in encry:
     intercept.append(chr(int(x,16)))
 
@@ -35,3 +35,4 @@ for c in encry:
 #print("".join(dataOut))
 
 if "".join(dataOut) == dataIn:print("Good")
+else:print("".join(dataOut),"".join(dataIn))
