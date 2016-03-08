@@ -3,10 +3,6 @@ import math
 
 op = open("Complete.txt", "r")
 inputRaw = op.read()
-errors = []
-print(inputRaw)
-
-iterate =  math.ceil(math.log(len(inputRaw),2))
 
 def checkParity(string, pos):
     endCheck = string[pos-1]
@@ -28,34 +24,41 @@ def checkParity(string, pos):
     else:
         return pos
 
-for x in range(0,iterate):
-    result = checkParity(inputRaw,(2**x))
-    errors.append(result)
+y = 0
+inputRaw = re.findall("............", inputRaw)
+for i in inputRaw:
+    iterate =  math.ceil(math.log(len(i),2))
+    errors = []
 
-location = 0
-for x in errors:
-    if x > 0:
-        location += int(x)
+    for x in range(0,iterate):
+        result = checkParity(i,(2**x))
+        errors.append(result)
 
-if location > 0:
-    response = input("Error in transmition detected, location at bit " + str(location) + ".\nShould the program try to auto correct? y/n")
-    if response.lower() == "y":
-        inputRaw = list(inputRaw)
-        inputRaw[location-1] = str(1 - int(inputRaw[location-1]))
-        inputRaw = "".join(inputRaw)
+    location = 0
+    for x in errors:
+        if x > 0:
+            location += int(x)
+
+    if location > 0:
+        response = input("Error in transmition detected, location at byte " + str(y) + "and bit" + str(location) + ".\nShould the program try to auto correct? y/n")
+        if response.lower() == "y":
+            i = list(i)
+            i[location-1] = str(1 - int(i[location-1]))
+            i = "".join(i)
+
+    for x in range(0, iterate):
+        i = list(i)
+        i[(2**x)-1] = "%"
+        i = "".join(i)
+
+    inputRaw[y] = i
+    y += 1
 
 op.close()
-
 op = open("Output.txt", "w")
-
-for x in range(0, iterate):
-    inputRaw = list(inputRaw)
-    inputRaw[(2**x)-1] = "%"
-    inputRaw = "".join(inputRaw)
-
+inputRaw = "".join(inputRaw)
 inputRaw = inputRaw.replace("%", "")
 inputRaw = re.findall("........", inputRaw)
-
 for i in [int(x,2) for x in inputRaw]:
     output = chr(i)
     op.write("%s" %output)
