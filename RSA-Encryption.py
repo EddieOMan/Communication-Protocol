@@ -2,7 +2,7 @@
 import re
 import random
 
-dataIn = "".join([chr(random.randint(65,90)) for x in range(100000)])#input()
+dataIn = "".join([chr(random.randint(64,90)) for x in range(100000)])#input()
 dataInList = list(dataIn)
 
 pubKey = 13*17
