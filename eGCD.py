@@ -12,8 +12,3 @@ def eGCD(e, n):
 
     return(e,x,a)
 
-
-for x in range(1,100,2):
-    if eGCD(x, 336)[0]==1:
-        if eGCD(x,336)[1] == abs(eGCD(x,336)[1]):
-            print(x, eGCD(x,336)[1])
