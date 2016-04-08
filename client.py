@@ -1,7 +1,7 @@
-import math, re, random, string, socket
+import math, re, random, string, socket, tkinter
 #------------------------Initialization-----------------------
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server = "192.168.0.10"
+server = "192.168.0.6"
 port = 5555
 sock.connect((server,port))
 
@@ -13,6 +13,24 @@ def logWrite(toWrite):
     log = open("logFile.txt", "a")
     log.write(toWrite)
     log.close()
+
+def powMod(x, y, z):
+    result = 1
+    while y:
+        if y % 2 == 1:
+            result = result * x % z
+        y >>= 1
+        x = x * x % z
+    return result
+
+def parityFix(binInt):
+    binStr = str(binInt).replace("0b","")
+    output = ""
+    if len(binStr) < 12:
+        for x in range(12-len(binStr)):
+            output += "0"
+
+    return output + binStr
 
 def hashPassword(password, salt = ""):
     #------------------------Hashing-----------------------
@@ -79,7 +97,7 @@ def sendData(toSend, command):
 
         inputRaw[inputRaw.index(y)] = i
     inputRaw = "".join(inputRaw)
-
+    print(inputRaw)
     #------------------------RSA Encryption-----------------------
     inputRaw = re.findall("............", inputRaw)
     dataIn = ""
@@ -95,13 +113,97 @@ def sendData(toSend, command):
     privateKey = 651221
     for m in dataInList:
         message = ord(m)
-        encry.append(hex((message**sharedKey)%pubKey))
+        encry.append(hex(powMod(message, sharedKey, pubKey)))
 
     encry = "".join(encry)
     logWrite("\n\nData sent to server:\n" + str(encry))
     #------------------------Final Data Send-----------------------
     finalMessage = encry + commServer + command + endMess
-    print(finalMessage)
+    print(len(finalMessage))
     sock.send(finalMessage.encode())
+
+def decodeData(toDecode):
+    #------------------------Formating-----------------------
+    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
+    print(toDecode)
+    #------------------------Decryption-----------------------
+    pubKey = 4363*2539
+    sharedKey = 17
+
+    privateKey = 651221
+    toDecode = toDecode.split("0x")[1:]
+
+    errorCheck = []
+    for c in toDecode:
+        errorCheck.append(chr(powMod(int(c,16), privateKey, pubKey)))
+
+    errorCheck = "".join(errorCheck)
+    print(errorCheck)
+
+    #------------------------Parity Checker-----------------------
+    errorCheck = "".join([parityFix(bin(ord(x))) for x in errorCheck]).replace("b","")
+    print(len(errorCheck))
+    def checkParity(string, pos):
+        endCheck = string[pos-1]
+        string = list(string)
+        string[pos-1] = "%"
+        string = "".join(string)
+
+        parity = re.findall((''.join('.' for x in range(0,pos))+'?'),(string[pos-1:]))
+        if parity == []:
+            parity = string[pos-1:]
+        else:
+            for x in range(1,len(parity)):
+                if x % 2 != 0:
+                    parity[x] = ""
+
+        parity ="".join(parity)
+        if parity.count("1") % 2 == int(endCheck):
+            return 0
+        else:
+            return pos
+
+    y = 0
+    inputRaw = re.findall("............", errorCheck)
+    print(inputRaw)
+    for i in inputRaw:
+        iterate =  math.ceil(math.log(len(i),2))
+        errors = []
+
+        for x in range(0,iterate):
+            result = checkParity(i,(2**x))
+            errors.append(result)
+
+        location = 0
+        for x in errors:
+            if x > 0:
+                location += int(x)
+
+        if location > 0:
+            response = input("Error in transmition detected, location at byte " + str(y) + "and bit" + str(location) + ".\nShould the program try to auto correct? y/n")
+            if response.lower() == "y":
+                i = list(i)
+                i[location-1] = str(1 - int(i[location-1]))
+                i = "".join(i)
+
+        for x in range(0, iterate):
+            i = list(i)
+            i[(2**x)-1] = "%"
+            i = "".join(i)
+
+        inputRaw[y] = i
+        y += 1
+
+    output = ""
+    inputRaw = "".join(inputRaw)
+    inputRaw = inputRaw.replace("%", "")
+    print(inputRaw)
+    inputRaw = re.findall("........", inputRaw)
+    for i in [int(x,2) for x in inputRaw]:
+        output += chr(i)
+
+    return output
+
+
 #------------------------Processing-----------------------
-hashPassword("hello")
+sendData("Hello", "Password")
