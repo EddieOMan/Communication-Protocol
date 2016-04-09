@@ -2,6 +2,15 @@
 import re
 import random
 
+def powMod(x, y, z):
+    result = 1
+    while y:
+        if y % 2 == 1:
+            result = result * x % z
+        y >>= 1
+        x = x * x % z
+    return result
+
 ##dataIn = "".join([chr(random.randint(65,90)) for x in range(100000)])#input()
 dataIn = input()
 dataInList = list(dataIn)
@@ -32,7 +41,7 @@ dataOut = []
 ##encry = re.findall("....", encry)
 for c in encry:
 
-    dataOut.append(chr((int(c,16)**privateKey)%pubKey))
+    dataOut.append(chr(pow_mod(int(c,16), privateKey, pubKey)))
 
 print("".join(dataOut))
 
