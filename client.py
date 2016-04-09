@@ -1,12 +1,22 @@
-import math, re, random, string, socket, tkinter
+import math, re, random, string, socket, os
+from tkinter import *
+from tkinter import filedialog
 #------------------------Initialization-----------------------
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server = "192.168.0.6"
 port = 5555
 sock.connect((server,port))
+IP = sock.getsockname()[0]
+
 
 commServer = "COMMAND"
 endMess = "EOFEOFEOFX"
+
+#------------------------Tkinter definitions-----------------------
+##rootWindow = Tk()
+##rootWindow.title("Protocol")
+##rootWindow.geometry("512x256")
+
 
 def logWrite(toWrite):
     #------------------------Data Logging-----------------------
@@ -46,11 +56,28 @@ def hashPassword(password, salt = ""):
 
     save = (foo ** parity>>int(str(foo)[:4]))
 
-    logWrite("\n\nPassword hash sent:\nHash = " + str(hex(save))[:256] + "\nSalt = " + str(salt))
-    sendData(str(hex(save))[:128] + "\n" + str(salt), "Password")
+    logWrite("\n\nPassword hash sent:\nHash = " + str(hex(save))[:128] + "\nSalt = " + str(salt))
+    return (str(hex(save))[:128] + "," +str(salt))
+
+#------------------------Sending and Reciving data-----------------------
+def sendFile():
+    placeHold = Tk()
+    placeHold.withdraw()
+    filePath = filedialog.askopenfilename()
+    file = open("%s" %filePath, "rb")
+    bite = file.read(200)
+    while bite:
+        sendData(str(bite), "File")
+        bite = file.read(200)
+    else:
+        sendData("", "End")
+
+    logWrite("File at " + str(filePath) + "sent to server")
+
+    placeHold.destroy()
 
 
-def sendData(toSend, command):
+def sendData(toSend, command = "None"):
     #------------------------Hamming Code-----------------------
     inputRaw = [str(bin(ord(x))) for x in toSend]
     for x in inputRaw:
@@ -97,7 +124,6 @@ def sendData(toSend, command):
 
         inputRaw[inputRaw.index(y)] = i
     inputRaw = "".join(inputRaw)
-    print(inputRaw)
     #------------------------RSA Encryption-----------------------
     inputRaw = re.findall("............", inputRaw)
     dataIn = ""
@@ -116,7 +142,8 @@ def sendData(toSend, command):
         encry.append(hex(powMod(message, sharedKey, pubKey)))
 
     encry = "".join(encry)
-    logWrite("\n\nData sent to server:\n" + str(encry))
+    if command != "File" or command != "End":
+        logWrite("\n\nData sent to server:\n" + str(encry))
     #------------------------Final Data Send-----------------------
     finalMessage = encry + commServer + command + endMess
     print(len(finalMessage))
@@ -125,7 +152,6 @@ def sendData(toSend, command):
 def decodeData(toDecode):
     #------------------------Formating-----------------------
     toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
-    print(toDecode)
     #------------------------Decryption-----------------------
     pubKey = 4363*2539
     sharedKey = 17
@@ -138,11 +164,9 @@ def decodeData(toDecode):
         errorCheck.append(chr(powMod(int(c,16), privateKey, pubKey)))
 
     errorCheck = "".join(errorCheck)
-    print(errorCheck)
 
     #------------------------Parity Checker-----------------------
     errorCheck = "".join([parityFix(bin(ord(x))) for x in errorCheck]).replace("b","")
-    print(len(errorCheck))
     def checkParity(string, pos):
         endCheck = string[pos-1]
         string = list(string)
@@ -165,7 +189,6 @@ def decodeData(toDecode):
 
     y = 0
     inputRaw = re.findall("............", errorCheck)
-    print(inputRaw)
     for i in inputRaw:
         iterate =  math.ceil(math.log(len(i),2))
         errors = []
@@ -197,13 +220,17 @@ def decodeData(toDecode):
     output = ""
     inputRaw = "".join(inputRaw)
     inputRaw = inputRaw.replace("%", "")
-    print(inputRaw)
     inputRaw = re.findall("........", inputRaw)
     for i in [int(x,2) for x in inputRaw]:
         output += chr(i)
 
     return output
 
-
 #------------------------Processing-----------------------
-sendData("Hello", "Password")
+##rootWindow.mainloop()
+
+data = sock.recv(2048)
+print(data.decode())
+sendData("Edward,"+str(IP)+","+str(hashPassword("1234")), "Register")
+sendFile()
+sendData("", "Close")
