@@ -16,18 +16,52 @@ except socket.error as e:
 s.listen(5)
 print("Waiting for connection...")
 def threadedClient(conn):
-    conn.send(str.encode("Welcome, type your name:\n"))
+    conn.send(str.encode(str(dataBaseGetOnline())))
     message = ""
+    login = 0
+    user = ""
     while 1:
-        data = conn.recv(2048)
+        data = conn.recv(8192)
         message = data.decode()
         command = message[message.index(commServer)+7:].replace(endMess,"")
+        allUsers = dataBaseGetAll()
         if command == "Password":
-            print(decodeData(message))
-        elif "ConnectTo" in command:
-            pass
+            if values[0] in [x[0] for x in dataBaseGetOnline()]:
+                conn.send("ERRORUser already online".encode())
+
+            elif values[0] in [x[0] for x in allUsers]:
+                if values[2] == allUsers[allUsers.index(values[0])][3]:
+                    conn.send("Login sucessful!".encode())
+                    user = values[0]
+                    dataBaseSetOnline(values[0])
+
+        elif command == "Register":
+            values = decodeData(message).split(",")
+            if values[0] in [x[0] for x in allUsers]:
+                conn.send("ERRORUsername already taken".encode())
+            else:
+                dataBaseInsert((values[0], 1, values[1], values[2], values[3],""))
+                user = values[0]
+
+                conn.send("Register sucessful!".encode())
+
+        elif command == "File":
+            file = message.replace(message[message.index(commServer):], "")
+
+            while command == "File":
+                data = conn.recv(8192)
+                message = data.decode()
+                command = message[message.index(commServer)+7:].replace(endMess,"")
+                file += message.replace(message[message.index(commServer):], "")
+            else:
+                file += message.replace(message[message.index(commServer):], "")
+                dataBaseUpdateData(user, file)
+                file = ""
+
         elif command == "Ping":
             pass
+        elif command == "Close":
+            break
 
     conn.close()
 
@@ -53,17 +87,56 @@ def dataBaseRepair():
     dataBase = sqlite3.connect("serverDatabase.db")
 
     dataBase.execute('''CREATE TABLE clients
-                 (user text, online boolean, IP interger, password text, salt text)''')
+                 (user text, online boolean, IP text, password text, salt text, data text)''')
 
     dataBase.close()
 
 def dataBaseInsert(values):
     dataBase = sqlite3.connect("serverDatabase.db")
 
-    dataBase.execute("INSERT INTO clients VALUES (?,?,?,?,?)", values)
+    dataBase.execute("INSERT INTO clients VALUES (?,?,?,?,?,?)", values)
     dataBase.commit()
 
     dataBase.close()
+
+def dataBaseUpdatePass(user, password, salt):
+    dataBase = sqlite3.connect("serverDatabase.db")
+
+    dataBase.execute("UPDATE clients SET password = ?, salt = ? WHERE user = ?", (password, salt, user))
+    dataBase.commit()
+
+    dataBase.close()
+
+def dataBaseUpdateData(user, data):
+    dataBase = sqlite3.connect("serverDatabase.db")
+
+    dataBase.execute("UPDATE clients SET data = ? WHERE user = ?", (data, user))
+    dataBase.commit()
+
+    dataBase.close()
+
+def dataBaseGetOnline():
+    dataBase = sqlite3.connect("serverDatabase.db")
+
+    toReturn = dataBase.execute("SELECT user,IP,salt FROM clients WHERE online = 1").fetchall()
+    dataBase.close()
+    return toReturn
+
+def dataBaseGetAll():
+    dataBase = sqlite3.connect("serverDatabase.db")
+
+    toReturn = dataBase.execute("SELECT * FROM clients").fetchall()
+    dataBase.close()
+    return toReturn
+
+def dataBaseSetOnline(user):
+    dataBase = sqlite3.connect("serverDatabase.db")
+
+    dataBase.execute("UPDATE clients SET online = 1 WHERE user = ?", (user))
+    dataBase.commit()
+
+    dataBase.close()
+
 
 #------------------------Sending and Reciving data-----------------------
 def sendData(toSend, command):
@@ -141,7 +214,6 @@ def sendData(toSend, command):
 def decodeData(toDecode):
     #------------------------Formating-----------------------
     toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
-    print(toDecode)
     #------------------------Decryption-----------------------
     pubKey = 4363*2539
     sharedKey = 17
@@ -154,11 +226,9 @@ def decodeData(toDecode):
         errorCheck.append(chr(powMod(int(c,16), privateKey, pubKey)))
 
     errorCheck = "".join(errorCheck)
-    print(errorCheck)
 
     #------------------------Parity Checker-----------------------
     errorCheck = "".join([parityFix(bin(ord(x))) for x in errorCheck]).replace("b","")
-    print(len(errorCheck))
     def checkParity(string, pos):
         endCheck = string[pos-1]
         string = list(string)
@@ -181,7 +251,6 @@ def decodeData(toDecode):
 
     y = 0
     inputRaw = re.findall("............", errorCheck)
-    print(inputRaw)
     for i in inputRaw:
         iterate =  math.ceil(math.log(len(i),2))
         errors = []
@@ -213,13 +282,13 @@ def decodeData(toDecode):
     output = ""
     inputRaw = "".join(inputRaw)
     inputRaw = inputRaw.replace("%", "")
-    print(inputRaw)
     inputRaw = re.findall("........", inputRaw)
     for i in [int(x,2) for x in inputRaw]:
         output += chr(i)
 
     return output
 
+#------------------------Processing-----------------------
 while 1:
     conn, addr = s.accept()
     print("Connected to:" + addr[0] + ":" + str(addr[1]))
