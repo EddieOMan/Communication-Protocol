@@ -231,6 +231,6 @@ def decodeData(toDecode):
 
 data = sock.recv(2048)
 print(data.decode())
-sendData("Edward,"+str(IP)+","+str(hashPassword("1234")), "Register")
+##sendData("Edward,"+str(IP)+","+str(hashPassword("1234")), "Register")
 sendFile()
 sendData("", "Close")
