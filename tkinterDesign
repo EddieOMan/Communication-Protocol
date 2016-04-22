@@ -1,0 +1,98 @@
+from tkinter import *
+
+rootWindow = Tk()
+rootWindow.geometry("0x0")
+
+class parentWindow(Toplevel):
+    def __init__(self, parent):
+        Toplevel.__init__(self)
+        self.parent = parent
+        self.protocol("WM_DELETE_WINDOW", self.onClosing)
+
+    def onClosing(self):
+        rootWindow.destroy()
+        self.destroy()
+
+    def openWindow(self, window=""):
+        if window == "Login":
+            chLoginWindow(self.parent)
+            self.destroy()
+        elif window == "Start":
+            chStartWindow(self.parent)
+            self.destroy()
+        elif window == "Main":
+            self.parent.frame.deiconify()
+            self.destroy()
+        elif window == "Register":
+            chRegisWindow(self.parent)
+            self.destroy()
+
+class chStartWindow(parentWindow):
+    def __init__(self, parent):
+        parentWindow.__init__(self, parent)
+        loginBut = Button(self, text = "Login", command=lambda:self.openWindow("Login"), font=("Helvetica", 18))
+        loginBut.pack()
+        regisBut = Button(self, text = "Register", command=lambda:self.openWindow("Register"), font=("Helvetica", 18))
+        regisBut.pack()
+
+
+class chLoginWindow(parentWindow):
+    def __init__(self, parent):
+        parentWindow.__init__(self, parent)
+        Label(self, text = "Username:").place(x = 30, y = 30)
+        entUser = Entry(self)
+        entUser.place(x = 30, y = 50)
+        Label(self, text = "Password:").place(x = 30, y = 70)
+        entPassword = Entry(self)
+        entPassword.place(x = 30, y = 90)
+        Button(self, text = "Enter", command = lambda:self.passHash(entUser.get(), entPassword.get())).place(x = 45, y = 110)
+
+    def passHash(self, User, Pass):
+        self.openWindow("Main")
+
+class chRegisWindow(parentWindow):
+    def __init__(self, parent):
+        parentWindow.__init__(self, parent)
+        Label(self, text = "Username:").place(x = 30, y = 30)
+        entUser = Entry(self)
+        entUser.place(x = 30, y = 50)
+        Label(self, text = "Password:").place(x = 30, y = 70)
+        entPassword = Entry(self)
+        entPassword.place(x = 30, y = 90)
+        Label(self, text = "Confirm Password:").place(x = 30, y = 110)
+        entRePassword = Entry(self)
+        entRePassword.place(x = 30, y = 130)
+        Button(self, text = "Enter", command = lambda:self.passHash(entUser.get(), entPassword.get(), entRePassword.get())).place(x = 45, y = 150)
+
+    def passHash(self, User, Pass, confPass):
+        self.openWindow("Main")
+
+class mainWindow(object):
+    def __init__(self, parent):
+        self.root = parent
+        self.root.title("Protocol")
+        self.root.withdraw()
+        self.frame = Toplevel(parent)
+        self.frame.geometry("1280x720")
+
+        self.root.protocol("WM_DELETE_WINDOW", self.onClosing)
+        self.frame.protocol("WM_DELETE_WINDOW", self.onClosing)
+        test = Button(self.frame, command = self.openWindow)
+        test.pack()
+        self.openWindow()
+
+    def hide(self):
+        self.frame.withdraw()
+
+    def openWindow(self, window=""):
+        self.hide()
+        if window == "Start" or window == "":
+            chStartWindow(self)
+
+    def onClosing(self):
+        rootWindow.destroy()
+
+
+mainWindow(rootWindow)
+
+rootWindow.mainloop()
