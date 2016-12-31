@@ -1,4 +1,4 @@
-import socket, sys, re, math, sqlite3
+import socket, sys, re, math, sqlite3, string, random, os, csv
 from _thread import *
 
 host = ''
@@ -16,7 +16,12 @@ except socket.error as e:
 s.listen(5)
 print("Waiting for connection...")
 def threadedClient(conn):
-    conn.send(str.encode(str(dataBaseGetOnline())))
+    toSend = ""
+    for i in dataBaseGetAllClientsSafe():
+        toSend += str(i) + ","
+    if len(toSend) == 0:
+        toSend = "NONE REGISTERED"
+    conn.send(str(toSend).encode())
     message = ""
     login = 0
     user = ""
@@ -24,26 +29,30 @@ def threadedClient(conn):
         data = conn.recv(8192)
         message = data.decode()
         command = message[message.index(commServer)+7:].replace(endMess,"")
-        allUsers = dataBaseGetAll()
+        allUsers = dataBaseGetAllClients()
         if command == "Password":
-            if values[0] in [x[0] for x in dataBaseGetOnline()]:
-                conn.send("ERRORUser already online".encode())
-
-            elif values[0] in [x[0] for x in allUsers]:
-                if values[2] == allUsers[allUsers.index(values[0])][3]:
+            #Values 0: username, 1: ip, 2: hash, 3: salt
+            values = decodeData(message).split(",")
+            if values[0] in [x[0] for x in allUsers]:
+                if values[2] == allUsers[[x[0] for x in allUsers].index(values[0])][1]:
                     conn.send("Login sucessful!".encode())
                     user = values[0]
-                    dataBaseSetOnline(values[0])
+                    conn.send("CLEAR".encode())
+                else:
+                    print("Login Failed",allUsers[[x[0] for x in allUsers].index(values[0])][1])
+                    conn.send("ERROR".encode())
 
         elif command == "Register":
             values = decodeData(message).split(",")
             if values[0] in [x[0] for x in allUsers]:
-                conn.send("ERRORUsername already taken".encode())
+                conn.send("ERROR".encode())
+                conn.close()
             else:
-                dataBaseInsert((values[0], 1, values[1], values[2], values[3],""))
+                conn.send("CLEAR".encode())
+                dataBaseRegister(values[0], values[2], values[3], 111)# 111 is placeholder
                 user = values[0]
 
-                conn.send("Register sucessful!".encode())
+                conn.send("Registered sucessful!".encode())
 
         elif command == "File":
             file = message.replace(message[message.index(commServer):], "")
@@ -55,7 +64,7 @@ def threadedClient(conn):
                 file += message.replace(message[message.index(commServer):], "")
             else:
                 file += message.replace(message[message.index(commServer):], "")
-                dataBaseUpdateData(user, file)
+                dataUpdate(dataAddDirectory(user, values[2], "toSend", ".txt"), file)# toSend and txt are placeholders
                 file = ""
 
         elif command == "Ping":
@@ -64,6 +73,72 @@ def threadedClient(conn):
             break
 
     conn.close()
+
+def isPrime(toTest):
+
+    divisblity = toTest - 1
+    count = 0
+    while divisblity % 2 == 0:
+        divisblity = divisblity // 2
+        count += 1
+
+    for trials in range(5):
+        a = random.randint(2, toTest - 1)
+        v = pow(a, divisblity, toTest)
+        if v != 1:
+            iteration = 0
+            while v != (toTest - 1):
+                if iteration == count:
+                    return False
+                else:
+                    iteration += 1
+                    v = (v ** 2) % toTest
+    return True
+
+def eGCD(e, n):
+    x, y, a, b = 1,0,0,1
+    count = 0
+    while n and count < 10000:
+        q = e//n
+
+        x, y = y, x - q*y
+
+        e, n = n, e - q*n
+        count+=1
+    return(e,x,a)
+
+def keyGen():
+    factorOne = 4
+    while not isPrime(factorOne):
+        factorOne = random.randint(2**32,2**48)
+
+
+    factorTwo = 4
+    while not isPrime(factorTwo):
+        factorTwo = random.randint(2**32, 2**48)
+
+
+    semi = factorOne*factorTwo
+    print("Semiprime", semi)
+
+    totient = (factorOne - 1) * (factorTwo - 1)
+
+    sharedKey = 2
+    while 1:
+        privateKey = eGCD(sharedKey, totient)
+
+        if privateKey[1] > 1 and privateKey[1] == abs(privateKey[1]) and isPrime(sharedKey):
+            break
+        else:
+            sharedKey += 1
+
+    factorOne = 0#--------Clear factors from RAM-------
+    factorTwo = 0
+
+    print("Shared key:", sharedKey)
+    print("Private key:", privateKey[1])
+    return semi, sharedKey, privateKey[1]
+
 
 def powMod(x, y, z):
     result = 1
@@ -82,63 +157,151 @@ def parityFix(binInt):
             output += "0"
 
     return output + binStr
+
+def placeHold(string, length):
+    return string[:length] + "%" + string[length:]
+
+def calcParity(string, pos):
+    parity = re.findall((''.join('.' for x in range(0,pos))+'?'),string[pos-1:])
+    if parity == []:
+        parity = string[pos-1:]
+    else:
+        for x in range(1,len(parity)):
+            if x % 2 != 0:
+                parity[x] = ""
+
+    parity ="".join(parity)
+    if parity.count("1") % 2 == 0:
+        return "0"
+    else:
+        return "1"
+
+def checkParity(string, pos):
+    endCheck = string[pos-1]
+    string = list(string)
+    string[pos-1] = "%"
+    string = "".join(string)
+
+    parity = re.findall((''.join('.' for x in range(0,pos))+'?'),(string[pos-1:]))
+    if parity == []:
+        parity = string[pos-1:]
+    else:
+        for x in range(1,len(parity)):
+            if x % 2 != 0:
+                parity[x] = ""
+
+    parity ="".join(parity)
+    if parity.count("1") % 2 == int(endCheck):
+        return 0
+    else:
+        return pos
 #------------------------Database commands-----------------------
 def dataBaseRepair():
     dataBase = sqlite3.connect("serverDatabase.db")
 
     dataBase.execute('''CREATE TABLE clients
-                 (user text, online boolean, IP text, password text, salt text, data text)''')
+                 (user varchar(20), password varchar(128), salt varchar(16),publicKey INTEGER,
+                 PRIMARY KEY(user, password))''')
+
+    dataBase.execute('''CREATE TABLE linkClientsData
+                 (user varchar(20), password varchar(128), dataID INTEGER, permisson INTEGER,
+                 FOREIGN KEY (user, password) REFERENCES clients(user, password),
+                 FOREIGN KEY (dataID) REFERENCES data(dataID))''')
+
+    dataBase.execute('''CREATE TABLE data
+                 (dataID INTEGER PRIMARY KEY, fileName varchar(128), directory varchar(128), fileType varchar(16))''')
 
     dataBase.close()
 
-def dataBaseInsert(values):
+def dataBaseRegister(user,password,salt, publicKey):
     dataBase = sqlite3.connect("serverDatabase.db")
 
-    dataBase.execute("INSERT INTO clients VALUES (?,?,?,?,?,?)", values)
+    dataBase.execute("INSERT INTO clients(user, password, salt, publicKey) VALUES (?,?,?,?)", (user, password, salt, publicKey))
     dataBase.commit()
 
     dataBase.close()
 
-def dataBaseUpdatePass(user, password, salt):
-    dataBase = sqlite3.connect("serverDatabase.db")
 
-    dataBase.execute("UPDATE clients SET password = ?, salt = ? WHERE user = ?", (password, salt, user))
-    dataBase.commit()
-
-    dataBase.close()
-
-def dataBaseUpdateData(user, data):
-    dataBase = sqlite3.connect("serverDatabase.db")
-
-    dataBase.execute("UPDATE clients SET data = ? WHERE user = ?", (data, user))
-    dataBase.commit()
-
-    dataBase.close()
-
-def dataBaseGetOnline():
-    dataBase = sqlite3.connect("serverDatabase.db")
-
-    toReturn = dataBase.execute("SELECT user,IP,salt FROM clients WHERE online = 1").fetchall()
-    dataBase.close()
-    return toReturn
-
-def dataBaseGetAll():
+def dataBaseGetAllClients():
     dataBase = sqlite3.connect("serverDatabase.db")
 
     toReturn = dataBase.execute("SELECT * FROM clients").fetchall()
     dataBase.close()
     return toReturn
 
-def dataBaseSetOnline(user):
+def dataBaseGetAllClientsSafe():
     dataBase = sqlite3.connect("serverDatabase.db")
 
-    dataBase.execute("UPDATE clients SET online = 1 WHERE user = ?", (user))
+    toReturn = dataBase.execute("SELECT user, salt FROM clients").fetchall()
+    dataBase.close()
+    return toReturn
+
+def dataAddDirectory(user, password, fileName, fileType):
+    dataBase = sqlite3.connect("serverDatabase.db")
+    chars = string.ascii_letters + string.digits
+    fileLocation = "".join(random.choice(chars) for i in range(10)) + ".txt"
+    directory = 'dataStore/%s' %fileLocation
+
+    dataBase.execute("INSERT INTO data(fileName, directory, fileType) VALUES (?,?,?)", (fileName, directory, fileType))
+    dataBase.commit()
+    dataID = dataBase.execute("SELECT dataID FROM data WHERE directory = ?", ('dataStore/%s' %fileLocation,)).fetchall()[0][0]
+    print(dataID)
+    dataBase.execute("INSERT INTO linkClientsData VALUES (?,?,?,?)", (user, password, dataID, 1))
     dataBase.commit()
 
     dataBase.close()
+    return fileLocation
+
+def dataUpdate(fileLocation, data):
+    currentDir = os.path.dirname(os.path.realpath('__file__'))
+    dataFile = open(os.path.join(currentDir, 'dataStore/%s' %(fileLocation)),"a")
+    dataFile.write(data)
+    dataFile.close()
+
+def dataBaseGetAllFiles(user, password):
+    dataBase = sqlite3.connect("serverDatabase.db")
+
+    dataList = dataBase.execute("SELECT dataID FROM linkClientsData WHERE user = ? AND password = ?", (user, password)).fetchall()
+    print(dataList)
+    toReturn = []
+    for x in dataList:
+        y = dataBase.execute("SELECT fileName FROM data WHERE dataID = ?", (x[0],)).fetchall()[0][0]
+        toReturn.append(y)
+    dataBase.close()
+    return toReturn
+
+def dataBaseRetriveFile(user, password, fileName):
+    dataBase = sqlite3.connect("serverDatabase.db")
+    fileLocation = ""
+
+    dataList = dataBase.execute("SELECT dataID FROM linkClientsData WHERE user = ? AND password = ?", (user, password)).fetchall()
+    print(dataList)
+    toReturn = []
+    for x in dataList:
+        y = dataBase.execute("SELECT directory FROM data WHERE dataID = ? AND fileName = ?", (x[0],fileName)).fetchall()
+        if y:
+            fileLocation = y[0][0]
+            break;
+
+    currentDir = os.path.dirname(os.path.realpath('__file__'))
+    dataFile = open(os.path.join(currentDir, '%s' %(fileLocation)),"r+")
+    return dataFile
 
 
 #------------------------Sending and Reciving data-----------------------
+def sendFile(file):
+    bite = file.read(200)
+    while bite:
+        sendData(str(bite), "File")
+        bite = file.read(200)
+    else:
+        sendData("", "End")
+
+    file.close()
+
+##    logWrite("File at " + str(filePath) + "sent to server")
+
+
 def sendData(toSend, command):
     #------------------------Hamming Code-----------------------
     inputRaw = [str(bin(ord(x))) for x in toSend]
@@ -149,24 +312,6 @@ def sendData(toSend, command):
 
     inputRaw = "".join(inputRaw)
     inputRaw = inputRaw.replace("b", "")
-
-    def placeHold(string, length):
-        return string[:length] + "%" + string[length:]
-
-    def calcParity(string, pos):
-        parity = re.findall((''.join('.' for x in range(0,pos))+'?'),string[pos-1:])
-        if parity == []:
-            parity = string[pos-1:]
-        else:
-            for x in range(1,len(parity)):
-                if x % 2 != 0:
-                    parity[x] = ""
-
-        parity ="".join(parity)
-        if parity.count("1") % 2 == 0:
-            return "0"
-        else:
-            return "1"
 
     inputRaw = re.findall("........", inputRaw)
     for y in inputRaw:
@@ -229,25 +374,7 @@ def decodeData(toDecode):
 
     #------------------------Parity Checker-----------------------
     errorCheck = "".join([parityFix(bin(ord(x))) for x in errorCheck]).replace("b","")
-    def checkParity(string, pos):
-        endCheck = string[pos-1]
-        string = list(string)
-        string[pos-1] = "%"
-        string = "".join(string)
 
-        parity = re.findall((''.join('.' for x in range(0,pos))+'?'),(string[pos-1:]))
-        if parity == []:
-            parity = string[pos-1:]
-        else:
-            for x in range(1,len(parity)):
-                if x % 2 != 0:
-                    parity[x] = ""
-
-        parity ="".join(parity)
-        if parity.count("1") % 2 == int(endCheck):
-            return 0
-        else:
-            return pos
 
     y = 0
     inputRaw = re.findall("............", errorCheck)
@@ -287,7 +414,23 @@ def decodeData(toDecode):
         output += chr(i)
 
     return output
+#------------------------Start-up and repair--------------
+if not(os.path.isfile("serverDatabase.db")):
+    dataBaseRepair()
 
+if not(os.path.isfile("RSAKeys.csv")):
+    semi, sharedKey, privateKey = keyGen()
+    keyFile = open("RSAKeys.csv", "w", newline= '')
+    fileWriter = csv.writer(keyFile)
+    fileWriter.writerows((str(semi),str(sharedKey),str(privateKey)))
+    keyFile.close()
+
+keyFile = open("RSAKeys.csv", "r")
+keyData = keyFile.read().replace(",","").split("\n")
+semi = int(keyData[0])
+sharedKey = int(keyData[1])
+privateKey = int(keyData[2])
+keyFile.close()
 #------------------------Processing-----------------------
 while 1:
     conn, addr = s.accept()
