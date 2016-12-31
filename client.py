@@ -1,9 +1,9 @@
-import math, re, random, string, socket, os
+import math, re, random, string, socket, os, csv
 from tkinter import *
 from tkinter import filedialog
 #------------------------Initialization-----------------------
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server = "192.168.0.6"
+server = "192.168.0.14"
 port = 5555
 sock.connect((server,port))
 IP = sock.getsockname()[0]
@@ -42,6 +42,92 @@ def parityFix(binInt):
 
     return output + binStr
 
+def isPrime(toTest):
+
+    divisblity = toTest - 1
+    count = 0
+    while divisblity % 2 == 0:
+        divisblity = divisblity // 2
+        count += 1
+
+    for trials in range(5):
+        a = random.randint(2, toTest - 1)
+        v = pow(a, divisblity, toTest)
+        if v != 1:
+            iteration = 0
+            while v != (toTest - 1):
+                if iteration == count:
+                    return False
+                else:
+                    iteration += 1
+                    v = (v ** 2) % toTest
+    return True
+
+def eGCD(e, n):
+    x, y, a, b = 1,0,0,1
+    count = 0
+    while n and count < 10000:
+        q = e//n
+
+        x, y = y, x - q*y
+            #a, b = b, a - q*b
+
+        e, n = n, e - q*n
+        count+=1
+    return(e,x,a)
+
+def placeHold(string, length):
+    return string[:length] + "%" + string[length:]
+
+def calcParity(string, pos):
+    parity = re.findall((''.join('.' for x in range(0,pos))+'?'),string[pos-1:])
+    if parity == []:
+        parity = string[pos-1:]
+    else:
+        for x in range(1,len(parity)):
+            if x % 2 != 0:
+                parity[x] = ""
+
+    parity ="".join(parity)
+    if parity.count("1") % 2 == 0:
+        return "0"
+    else:
+        return "1"
+
+def keyGen():
+    factorOne = 4
+    while not isPrime(factorOne):
+        factorOne = random.randint(2**32,2**48)
+
+
+    factorTwo = 4
+    while not isPrime(factorTwo):
+        factorTwo = random.randint(2**32, 2**48)
+
+
+    semi = factorOne*factorTwo
+    print("Semiprime", semi)
+
+    totient = (factorOne - 1) * (factorTwo - 1)
+
+    sharedKey = 2
+    while 1:
+        privateKey = eGCD(sharedKey, totient)
+
+        if privateKey[1] > 1 and privateKey[1] == abs(privateKey[1]) and isPrime(sharedKey):
+            break
+        else:
+            sharedKey += 1
+
+    factorOne = 0#--------Clear factors from RAM-------
+    factorTwo = 0
+
+    print("Shared key:", sharedKey)
+    print("Private key:", privateKey[1])
+    return semi, sharedKey, privateKey[1]
+
+
+
 def hashPassword(password, salt = ""):
     #------------------------Hashing-----------------------
     if salt == "":
@@ -59,6 +145,26 @@ def hashPassword(password, salt = ""):
     logWrite("\n\nPassword hash sent:\nHash = " + str(hex(save))[:128] + "\nSalt = " + str(salt))
     return (str(hex(save))[:128] + "," +str(salt))
 
+def checkParity(string, pos):
+    endCheck = string[pos-1]
+    string = list(string)
+    string[pos-1] = "%"
+    string = "".join(string)
+
+    parity = re.findall((''.join('.' for x in range(0,pos))+'?'),(string[pos-1:]))
+    if parity == []:
+        parity = string[pos-1:]
+    else:
+        for x in range(1,len(parity)):
+            if x % 2 != 0:
+                parity[x] = ""
+
+    parity ="".join(parity)
+    if parity.count("1") % 2 == int(endCheck):
+        return 0
+    else:
+        return pos
+
 #------------------------Sending and Reciving data-----------------------
 def sendFile():
     placeHold = Tk()
@@ -71,7 +177,7 @@ def sendFile():
         bite = file.read(200)
     else:
         sendData("", "End")
-
+    file.close()
     logWrite("File at " + str(filePath) + "sent to server")
 
     placeHold.destroy()
@@ -87,24 +193,6 @@ def sendData(toSend, command = "None"):
 
     inputRaw = "".join(inputRaw)
     inputRaw = inputRaw.replace("b", "")
-
-    def placeHold(string, length):
-        return string[:length] + "%" + string[length:]
-
-    def calcParity(string, pos):
-        parity = re.findall((''.join('.' for x in range(0,pos))+'?'),string[pos-1:])
-        if parity == []:
-            parity = string[pos-1:]
-        else:
-            for x in range(1,len(parity)):
-                if x % 2 != 0:
-                    parity[x] = ""
-
-        parity ="".join(parity)
-        if parity.count("1") % 2 == 0:
-            return "0"
-        else:
-            return "1"
 
     inputRaw = re.findall("........", inputRaw)
     for y in inputRaw:
@@ -142,11 +230,9 @@ def sendData(toSend, command = "None"):
         encry.append(hex(powMod(message, sharedKey, pubKey)))
 
     encry = "".join(encry)
-    if command != "File" or command != "End":
-        logWrite("\n\nData sent to server:\n" + str(encry))
+    logWrite("\n\nData sent to server:\n" + str(encry))
     #------------------------Final Data Send-----------------------
     finalMessage = encry + commServer + command + endMess
-    print(len(finalMessage))
     sock.send(finalMessage.encode())
 
 def decodeData(toDecode):
@@ -167,25 +253,6 @@ def decodeData(toDecode):
 
     #------------------------Parity Checker-----------------------
     errorCheck = "".join([parityFix(bin(ord(x))) for x in errorCheck]).replace("b","")
-    def checkParity(string, pos):
-        endCheck = string[pos-1]
-        string = list(string)
-        string[pos-1] = "%"
-        string = "".join(string)
-
-        parity = re.findall((''.join('.' for x in range(0,pos))+'?'),(string[pos-1:]))
-        if parity == []:
-            parity = string[pos-1:]
-        else:
-            for x in range(1,len(parity)):
-                if x % 2 != 0:
-                    parity[x] = ""
-
-        parity ="".join(parity)
-        if parity.count("1") % 2 == int(endCheck):
-            return 0
-        else:
-            return pos
 
     y = 0
     inputRaw = re.findall("............", errorCheck)
@@ -226,11 +293,159 @@ def decodeData(toDecode):
 
     return output
 
-#------------------------Processing-----------------------
-##rootWindow.mainloop()
+##def reciveFile():
+##    if command == "File":
+##        file = message.replace(message[message.index(commServer):], "")
+##
+##    while command == "File":
+##        data = conn.recv(8192)
+##        message = data.decode()
+##        command = message[message.index(commServer)+7:].replace(endMess,"")
+##        file += message.replace(message[message.index(commServer):], "")
+##    else:
+##        file += message.replace(message[message.index(commServer):], "")
+##        return file
 
+#------------------------Start-up and repair--------------
+if not(os.path.isfile("RSAKeysClient.csv")):
+    semi, sharedKey, privateKey = keyGen()
+    keyFile = open("RSAKeysClient.csv", "w", newline= '')
+    fileWriter = csv.writer(keyFile)
+    fileWriter.writerows((str(semi),str(sharedKey),str(privateKey)))
+    keyFile.close()
+
+keyFile = open("RSAKeysClient.csv", "r")
+keyData = keyFile.read().replace(",","").split("\n")
+semi = keyData[0]
+sharedKey = keyData[1]
+privateKey = keyData[2]
+keyFile.close()
+print(semi, sharedKey, privateKey)
+
+#------------------------Processing-----------------------
 data = sock.recv(2048)
-print(data.decode())
-##sendData("Edward,"+str(IP)+","+str(hashPassword("1234")), "Register")
-sendFile()
-sendData("", "Close")
+dataUsers = data.decode()
+#------------------------Tkinter definitions-----------------------
+rootWindow = Tk()
+rootWindow.geometry("0x0")
+
+#------------------------Window Parent Class-----------------------
+class parentWindow(Toplevel):
+    def __init__(self, parent):
+        Toplevel.__init__(self)
+        self.parent = parent
+        self.protocol("WM_DELETE_WINDOW", self.onClosing)
+
+    def onClosing(self):
+        rootWindow.destroy()
+        sendData("", "Close")
+        self.destroy()
+
+    def openWindow(self, window=""):
+        if window == "Login":
+            chLoginWindow(self.parent)
+            self.destroy()
+        elif window == "Start":
+            chStartWindow(self.parent)
+            self.destroy()
+        elif window == "Main":
+            self.parent.frame.deiconify()
+            self.destroy()
+        elif window == "Register":
+            chRegisWindow(self.parent)
+            self.destroy()
+
+#------------------------Window SubClasses-----------------------
+class chStartWindow(parentWindow):
+    def __init__(self, parent):
+        parentWindow.__init__(self, parent)
+        loginBut = Button(self, text = "Login", command=lambda:self.openWindow("Login"), font=("Helvetica", 18))
+        loginBut.pack()
+        regisBut = Button(self, text = "Register", command=lambda:self.openWindow("Register"), font=("Helvetica", 18))
+        regisBut.pack()
+
+
+class chLoginWindow(parentWindow):
+    def __init__(self, parent):
+        parentWindow.__init__(self, parent)
+        Label(self, text = "Username:").place(x = 30, y = 30)
+        entUser = Entry(self)
+        entUser.place(x = 30, y = 50)
+        Label(self, text = "Password:").place(x = 30, y = 70)
+        entPassword = Entry(self)
+        entPassword.place(x = 30, y = 90)
+        Button(self, text = "Enter", command = lambda:self.passHash(entUser.get(), entPassword.get())).place(x = 45, y = 110)
+
+    def passHash(self, user, password):
+        listUsers = [x.split(",") for x in (dataUsers.replace("(","").replace("'","").split("),"))]
+        for regiUser in listUsers:
+            if user == regiUser[0]:
+                print(regiUser[1][1:])
+                sendData(str(user) + ","+str(IP)+","+str(hashPassword(password, regiUser[1][1:])), "Password")
+                data = sock.recv(2048)
+                if data.decode() == "CLEAR":
+                    self.openWindow("Main")
+                else:
+                    print("Password incorrect")
+
+class chRegisWindow(parentWindow):
+    def __init__(self, parent):
+        parentWindow.__init__(self, parent)
+        Label(self, text = "Username:").place(x = 30, y = 30)
+        entUser = Entry(self)
+        entUser.place(x = 30, y = 50)
+        Label(self, text = "Password:").place(x = 30, y = 70)
+        entPassword = Entry(self)
+        entPassword.place(x = 30, y = 90)
+        Label(self, text = "Confirm Password:").place(x = 30, y = 110)
+        entRePassword = Entry(self)
+        entRePassword.place(x = 30, y = 130)
+        Button(self, text = "Enter", command = lambda:self.passHash(entUser.get(), entPassword.get(), entRePassword.get())).place(x = 45, y = 150)
+
+    def passHash(self, user, password, confPass):
+##        self.openWindow("Main")
+        if confPass != password:
+            print("Confirm password diffrent to password")
+        else:
+            sendData(user+","+str(IP)+","+str(hashPassword(password)), "Register")
+            if data.decode() == "CLEAR":
+                    self.openWindow("Main")
+            else:
+                print("Password incorrect")
+
+
+#------------------------mainWindow-----------------------
+class mainWindow(object):
+    def __init__(self, parent):
+        self.root = parent
+        self.root.title("Protocol")
+        self.root.withdraw()
+        self.frame = Toplevel(parent)
+##        self.frame.geometry("1280x720")
+        Button(self.frame, text = "Ping", command = lambda:self.ping()).place(x = 45, y = 15)
+        Button(self.frame, text = "Send File", command = sendFile).place(x = 45, y = 45)
+        Button(self.frame, text = "Delete File", command = lambda:self.ping()).place(x = 45, y = 75)
+        entPermissions = Entry(self.frame)
+        entPermissions.place(x = 45, y = 105)
+        self.root.protocol("WM_DELETE_WINDOW", self.onClosing)
+        self.frame.protocol("WM_DELETE_WINDOW", self.onClosing)
+        self.openWindow()
+
+    def hide(self):
+        self.frame.withdraw()
+
+    def openWindow(self, window=""):
+        self.hide()
+        if window == "Start" or window == "":
+            chStartWindow(self)
+
+    def ping(self):
+        pass
+
+    def onClosing(self):
+        rootWindow.destroy()
+
+#------------------------End-----------------------
+mainWindow(rootWindow)
+
+rootWindow.mainloop()
