@@ -1,5 +1,6 @@
-import socket, sys, re, math, sqlite3, string, random, os, csv
+import socket, re, math, sqlite3, string, random, os, csv
 from _thread import *
+#import sys
 
 host = ''
 port = 5555
@@ -31,12 +32,12 @@ def threadedClient(conn):
         command = message[message.index(commServer)+7:].replace(endMess,"")
         allUsers = dataBaseGetAllClients()
         if command == "Password":
-            #Values 0: username, 1: ip, 2: hash, 3: salt
+            #Values 0: username, 1: ip, 2: hash, 3: salt 4: public key
             values = decodeData(message).split(",")
             if values[0] in [x[0] for x in allUsers]:
                 if values[2] == allUsers[[x[0] for x in allUsers].index(values[0])][1]:
-                    conn.send("Login sucessful!".encode())
                     user = values[0]
+                    password = values[2]
                     conn.send("CLEAR".encode())
                 else:
                     print("Login Failed",allUsers[[x[0] for x in allUsers].index(values[0])][1])
@@ -48,11 +49,11 @@ def threadedClient(conn):
                 conn.send("ERROR".encode())
                 conn.close()
             else:
+                print(values[4])
                 conn.send("CLEAR".encode())
-                dataBaseRegister(values[0], values[2], values[3], 111)# 111 is placeholder
+                dataBaseRegister(values[0], values[2], values[3], values[4])# 111 is placeholder
                 user = values[0]
-
-                conn.send("Registered sucessful!".encode())
+                password = values[2]
 
         elif command == "File":
             file = message.replace(message[message.index(commServer):], "")
@@ -64,9 +65,14 @@ def threadedClient(conn):
                 file += message.replace(message[message.index(commServer):], "")
             else:
                 file += message.replace(message[message.index(commServer):], "")
-                dataUpdate(dataAddDirectory(user, values[2], "toSend", ".txt"), file)# toSend and txt are placeholders
+                dataUpdate(dataAddDirectory(user, password, "toSend", ".txt"), file)# toSend and txt are placeholders
                 file = ""
-
+        elif command == "Get":
+            conn.send(str(dataBaseGetAllFiles(user, password)).encode())
+        elif command == "Delete":
+            fileName = values[0]
+            fileToDeleteDir = dataBaseRetriveFile(user, password, fileName)[1]
+            os.remove(fileToDeleteDir)
         elif command == "Ping":
             pass
         elif command == "Close":
@@ -123,14 +129,14 @@ def keyGen():
 
     totient = (factorOne - 1) * (factorTwo - 1)
 
-    sharedKey = 2
+    sharedKey = 17
     while 1:
         privateKey = eGCD(sharedKey, totient)
 
         if privateKey[1] > 1 and privateKey[1] == abs(privateKey[1]) and isPrime(sharedKey):
             break
         else:
-            sharedKey += 1
+            return keyGen()
 
     factorOne = 0#--------Clear factors from RAM-------
     factorTwo = 0
@@ -138,7 +144,6 @@ def keyGen():
     print("Shared key:", sharedKey)
     print("Private key:", privateKey[1])
     return semi, sharedKey, privateKey[1]
-
 
 def powMod(x, y, z):
     result = 1
@@ -200,7 +205,7 @@ def dataBaseRepair():
     dataBase = sqlite3.connect("serverDatabase.db")
 
     dataBase.execute('''CREATE TABLE clients
-                 (user varchar(20), password varchar(128), salt varchar(16),publicKey INTEGER,
+                 (user varchar(20), password varchar(128), salt varchar(16),publicKey varchar(128),
                  PRIMARY KEY(user, password))''')
 
     dataBase.execute('''CREATE TABLE linkClientsData
@@ -285,8 +290,7 @@ def dataBaseRetriveFile(user, password, fileName):
 
     currentDir = os.path.dirname(os.path.realpath('__file__'))
     dataFile = open(os.path.join(currentDir, '%s' %(fileLocation)),"r+")
-    return dataFile
-
+    return dataFile, currentDir
 
 #------------------------Sending and Reciving data-----------------------
 def sendFile(file):
@@ -300,10 +304,27 @@ def sendFile(file):
     file.close()
 
 ##    logWrite("File at " + str(filePath) + "sent to server")
+def encrypt(inputRaw):
+    inputRaw = re.findall("............", inputRaw)
+    dataIn = ""
+    for i in inputRaw:
+        dataIn += chr(int(i,2))
 
+    dataInList = list(dataIn)
 
-def sendData(toSend, command):
-    #------------------------Hamming Code-----------------------
+    pubKey = 4363*2539
+    sharedKey = 17
+    encry = []
+
+    privateKey = 651221
+    for m in dataInList:
+        message = ord(m)
+        encry.append(hex((message**sharedKey)%pubKey))
+
+    encry = "".join(encry)
+    return encry
+
+def hammingcode(toSend):
     inputRaw = [str(bin(ord(x))) for x in toSend]
     for x in inputRaw:
         if len(x) == 8:
@@ -331,35 +352,10 @@ def sendData(toSend, command):
 
         inputRaw[inputRaw.index(y)] = i
     inputRaw = "".join(inputRaw)
+    return inputRaw
 
-    #------------------------RSA Encryption-----------------------
-    inputRaw = re.findall("............", inputRaw)
-    dataIn = ""
-    for i in inputRaw:
-        dataIn += chr(int(i,2))
-
-    dataInList = list(dataIn)
-
-    pubKey = 4363*2539
-    sharedKey = 17
-    encry = []
-
-    privateKey = 651221
-    for m in dataInList:
-        message = ord(m)
-        encry.append(hex((message**sharedKey)%pubKey))
-
-    encry = "".join(encry)
-    logWrite("\n\nData sent to server:\n" + str(encry))
-    #------------------------Final Data Send-----------------------
-    finalMessage = encry + commServer + command + endMess
-    print(finalMessage)
-    sock.send(finalMessage.encode())
-
-def decodeData(toDecode):
-    #------------------------Formating-----------------------
-    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
-    #------------------------Decryption-----------------------
+def decrypt(toDecode):
+#------------------------Decryption-----------------------
     pubKey = 4363*2539
     sharedKey = 17
 
@@ -371,10 +367,10 @@ def decodeData(toDecode):
         errorCheck.append(chr(powMod(int(c,16), privateKey, pubKey)))
 
     errorCheck = "".join(errorCheck)
+    return errorCheck
 
-    #------------------------Parity Checker-----------------------
+def inverseHamming(errorCheck):
     errorCheck = "".join([parityFix(bin(ord(x))) for x in errorCheck]).replace("b","")
-
 
     y = 0
     inputRaw = re.findall("............", errorCheck)
@@ -412,8 +408,21 @@ def decodeData(toDecode):
     inputRaw = re.findall("........", inputRaw)
     for i in [int(x,2) for x in inputRaw]:
         output += chr(i)
-
     return output
+
+def sendData(toSend, command):
+    encry = encrypt(hammingcode(toSend))
+    #------------------------Final Data Send-----------------------
+    finalMessage = encry + commServer + command + endMess
+    print(finalMessage)
+    sock.send(finalMessage.encode())
+
+def decodeData(toDecode):
+    #------------------------Formating-----------------------
+    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
+
+    return inverseHamming(decrypt(toDecode))
+
 #------------------------Start-up and repair--------------
 if not(os.path.isfile("serverDatabase.db")):
     dataBaseRepair()
@@ -427,9 +436,17 @@ if not(os.path.isfile("RSAKeys.csv")):
 
 keyFile = open("RSAKeys.csv", "r")
 keyData = keyFile.read().replace(",","").split("\n")
-semi = int(keyData[0])
-sharedKey = int(keyData[1])
-privateKey = int(keyData[2])
+
+global semi
+semi = keyData[0]
+
+global sharedKey
+sharedKey = keyData[1]
+
+global privateKey
+privateKey = keyData[2]
+
+keyFile.close()
 keyFile.close()
 #------------------------Processing-----------------------
 while 1:
