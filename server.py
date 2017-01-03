@@ -22,7 +22,11 @@ def threadedClient(conn):
         toSend += str(i) + ","
     if len(toSend) == 0:
         toSend = "NONE REGISTERED"
+    conn.send(str(semi).encode())
     conn.send(str(toSend).encode())
+    global publicKey
+    publicKey = int(conn.recv(128).decode())
+    print(publicKey)
     message = ""
     login = 0
     user = ""
@@ -33,7 +37,7 @@ def threadedClient(conn):
         allUsers = dataBaseGetAllClients()
         if command == "Password":
             #Values 0: username, 1: ip, 2: hash, 3: salt 4: public key
-            values = decodeData(message).split(",")
+            values = decodeData(message.replace(message[message.index(commServer):], "")).split(",")
             if values[0] in [x[0] for x in allUsers]:
                 if values[2] == allUsers[[x[0] for x in allUsers].index(values[0])][1]:
                     user = values[0]
@@ -44,7 +48,7 @@ def threadedClient(conn):
                     conn.send("ERROR".encode())
 
         elif command == "Register":
-            values = decodeData(message).split(",")
+            values = decodeData(message.replace(message[message.index(commServer):], "")).split(",")
             if values[0] in [x[0] for x in allUsers]:
                 conn.send("ERROR".encode())
                 conn.close()
@@ -67,14 +71,33 @@ def threadedClient(conn):
                 file += message.replace(message[message.index(commServer):], "")
                 dataUpdate(dataAddDirectory(user, password, "toSend", ".txt"), file)# toSend and txt are placeholders
                 file = ""
+
         elif command == "Get":
             conn.send(str(dataBaseGetAllFiles(user, password)).encode())
+
         elif command == "Delete":
+            values = decodeData(message.replace(message[message.index(commServer):], "")).split(",")
             fileName = values[0]
             fileToDeleteDir = dataBaseRetriveFile(user, password, fileName)[1]
             os.remove(fileToDeleteDir)
+            dataBaseDeleteRecord(user, password, fileName)
+
+        elif command == "Send":
+            values = decodeData(message.replace(message[message.index(commServer):], "")).split(",")
+            fileName = values[0]
+            fileToSend = dataBaseRetriveFile(user, password, fileName)[0]
+            bite = fileToSend.read(200)
+            while bite:
+                sendData(str(decodeData(bite)), "File")
+                bite = fileToSend.read(200)
+            else:
+                sendData("", "End")
+            fileToSend.close()
+
+
         elif command == "Ping":
             pass
+
         elif command == "Close":
             break
 
@@ -286,23 +309,30 @@ def dataBaseRetriveFile(user, password, fileName):
         y = dataBase.execute("SELECT directory FROM data WHERE dataID = ? AND fileName = ?", (x[0],fileName)).fetchall()
         if y:
             fileLocation = y[0][0]
+            dataBase.close()
             break;
 
     currentDir = os.path.dirname(os.path.realpath('__file__'))
     dataFile = open(os.path.join(currentDir, '%s' %(fileLocation)),"r+")
-    return dataFile, currentDir
+    return dataFile, os.path.join(currentDir, '%s' %(fileLocation))
+
+def dataBaseDeleteRecord(user, password, fileName):
+    dataBase = sqlite3.connect("serverDatabase.db")
+
+    dataList = dataBase.execute("SELECT dataID FROM linkClientsData WHERE user = ? AND password = ?", (user, password)).fetchall()
+    print(dataList)
+    toReturn = []
+    for x in dataList:
+        y = dataBase.execute("SELECT directory FROM data WHERE dataID = ? AND fileName = ?", (x[0],fileName)).fetchall()
+        if y:
+            dataBase.execute("DELETE FROM data WHERE dataID = ? AND fileName = ?", (x[0],fileName))
+            dataBase.execute("DELETE FROM linkClientsData WHERE user = ? AND password = ? AND dataID = ?", (user, password, x[0]))
+            print(x[0], fileName)
+            break;
+    dataBase.commit()
+    dataBase.close()
 
 #------------------------Sending and Reciving data-----------------------
-def sendFile(file):
-    bite = file.read(200)
-    while bite:
-        sendData(str(bite), "File")
-        bite = file.read(200)
-    else:
-        sendData("", "End")
-
-    file.close()
-
 ##    logWrite("File at " + str(filePath) + "sent to server")
 def encrypt(inputRaw):
     inputRaw = re.findall("............", inputRaw)
@@ -312,14 +342,12 @@ def encrypt(inputRaw):
 
     dataInList = list(dataIn)
 
-    pubKey = 4363*2539
     sharedKey = 17
     encry = []
 
-    privateKey = 651221
     for m in dataInList:
         message = ord(m)
-        encry.append(hex((message**sharedKey)%pubKey))
+        encry.append(hex(powMod(message,sharedKey,publicKey)))
 
     encry = "".join(encry)
     return encry
@@ -356,15 +384,13 @@ def hammingcode(toSend):
 
 def decrypt(toDecode):
 #------------------------Decryption-----------------------
-    pubKey = 4363*2539
     sharedKey = 17
 
-    privateKey = 651221
     toDecode = toDecode.split("0x")[1:]
 
     errorCheck = []
     for c in toDecode:
-        errorCheck.append(chr(powMod(int(c,16), privateKey, pubKey)))
+        errorCheck.append(chr(powMod(int(c,16), privateKey, semi)))
 
     errorCheck = "".join(errorCheck)
     return errorCheck
@@ -415,11 +441,11 @@ def sendData(toSend, command):
     #------------------------Final Data Send-----------------------
     finalMessage = encry + commServer + command + endMess
     print(finalMessage)
-    sock.send(finalMessage.encode())
+    conn.send(finalMessage.encode())
 
 def decodeData(toDecode):
     #------------------------Formating-----------------------
-    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
+##    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
 
     return inverseHamming(decrypt(toDecode))
 
@@ -438,13 +464,13 @@ keyFile = open("RSAKeys.csv", "r")
 keyData = keyFile.read().replace(",","").split("\n")
 
 global semi
-semi = keyData[0]
+semi = int(keyData[0])
 
 global sharedKey
-sharedKey = keyData[1]
+sharedKey = int(keyData[1])
 
 global privateKey
-privateKey = keyData[2]
+privateKey = int(keyData[2])
 
 keyFile.close()
 keyFile.close()
