@@ -190,14 +190,11 @@ def encrypt(inputRaw):
 
     dataInList = list(dataIn)
 
-    pubKey = 4363*2539
     sharedKey = 17
     encry = []
-
-    privateKey = 651221
     for m in dataInList:
         message = ord(m)
-        encry.append(hex((message**sharedKey)%pubKey))
+        encry.append(hex(powMod(message,sharedKey,publicKey)))
 
     encry = "".join(encry)
     return encry
@@ -234,15 +231,13 @@ def hammingcode(toSend):
 
 def decrypt(toDecode):
 #------------------------Decryption-----------------------
-    pubKey = 4363*2539
     sharedKey = 17
 
-    privateKey = 651221
     toDecode = toDecode.split("0x")[1:]
 
     errorCheck = []
     for c in toDecode:
-        errorCheck.append(chr(powMod(int(c,16), privateKey, pubKey)))
+        errorCheck.append(chr(powMod(int(c,16), privateKey, semi)))
 
     errorCheck = "".join(errorCheck)
     return errorCheck
@@ -299,22 +294,22 @@ def sendData(toSend, command):
 
 def decodeData(toDecode):
     #------------------------Formating-----------------------
-    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
+##    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
 
     return inverseHamming(decrypt(toDecode))
 
-##def reciveFile():
-##    if command == "File":
-##        file = message.replace(message[message.index(commServer):], "")
-##
-##    while command == "File":
-##        data = conn.recv(8192)
-##        message = data.decode()
-##        command = message[message.index(commServer)+7:].replace(endMess,"")
-##        file += message.replace(message[message.index(commServer):], "")
-##    else:
-##        file += message.replace(message[message.index(commServer):], "")
-##        return file
+def reciveFile():
+    if command == "File":
+        file = message.replace(message[message.index(commServer):], "")
+
+    while command == "File":
+        data = conn.recv(8192)
+        message = data.decode()
+        command = message[message.index(commServer)+7:].replace(endMess,"")
+        file += message.replace(message[message.index(commServer):], "")
+    else:
+        file += message.replace(message[message.index(commServer):], "")
+        return file
 
 #------------------------Start-up and repair--------------
 if not(os.path.isfile("RSAKeysClient.csv")):
@@ -328,20 +323,32 @@ keyFile = open("RSAKeysClient.csv", "r")
 keyData = keyFile.read().replace(",","").split("\n")
 
 global semi
-semi = keyData[0]
+semi = int(keyData[0])
 
 global sharedKey
-sharedKey = keyData[1]
+sharedKey = int(keyData[1])
 
 global privateKey
-privateKey = keyData[2]
+privateKey = int(keyData[2])
 
 keyFile.close()
 print(semi, sharedKey, privateKey)
 
 #------------------------Processing-----------------------
+while 1:
+    try:
+        data = sock.recv(2048)
+        global publicKey
+        publicKey = int(data.decode())
+        print(publicKey)
+        break
+    except:
+        pass
+
 data = sock.recv(2048)
 dataUsers = data.decode()
+
+sock.send(str(semi).encode())
 #------------------------Tkinter definitions-----------------------
 rootWindow = Tk()
 rootWindow.geometry("0x0")
@@ -447,7 +454,8 @@ class mainWindow(object):
         Button(self.frame, text = "Ping", command = lambda:self.ping()).place(x = 45, y = 15)
         Button(self.frame, text = "Send File", command = sendFile).place(x = 45, y = 45)
         Button(self.frame, text = "Get Files", command = lambda:self.getFiles()).place(x = 45, y = 75)
-        Button(self.frame, text = "Get Files", command = lambda:self.deleteFile()).place(x = 45, y = 105)
+        Button(self.frame, text = "Delete File", command = lambda:self.deleteFile()).place(x = 45, y = 105)
+        Button(self.frame, text = "Retrieve File", command = lambda:self.retrieveFile()).place(x = 45, y = 135)
 ##        entPermissions = Entry(self.frame)
 ##        entPermissions.place(x = 45, y = 105)
         self.root.protocol("WM_DELETE_WINDOW", self.onClosing)
@@ -470,7 +478,27 @@ class mainWindow(object):
         data = sock.recv(2048)
         print(data.decode())
     def deleteFile(self, fileName="toSend"):
-        sendData(fileName, "Delete")
+        sendData(fileName +  ",", "Delete")
+
+    def retrieveFile(self, fileName="toSend"):
+        sendData(fileName +  ",", "Send")
+        data = sock.recv(8192)
+        message = data.decode()
+        command = message[message.index(commServer)+7:].replace(endMess,"")
+        print(commServer, message)
+        if command == "File":
+            file = message.replace(message[message.index(commServer):], "")
+
+        while command == "File":
+            data = sock.recv(8192)
+            message = data.decode()
+            command = message[message.index(commServer)+7:].replace(endMess,"")
+            file += message.replace(message[message.index(commServer):], "")
+        else:
+            file += message.replace(message[message.index(commServer):], "")
+
+        print(decodeData(file))
+
 
     def onClosing(self):
         rootWindow.destroy()
