@@ -1,9 +1,9 @@
-import math, re, random, string, socket, os, csv
+import math, re, random, string, socket, os, csv, time
 from tkinter import *
 from tkinter import filedialog
 #------------------------Initialization-----------------------
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server = "192.168.0.14"
+server = "192.168.0.13"
 port = 5555
 sock.connect((server,port))
 IP = sock.getsockname()[0]
@@ -110,14 +110,14 @@ def keyGen():
 
     totient = (factorOne - 1) * (factorTwo - 1)
 
-    sharedKey = 2
+    sharedKey = 17
     while 1:
         privateKey = eGCD(sharedKey, totient)
 
         if privateKey[1] > 1 and privateKey[1] == abs(privateKey[1]) and isPrime(sharedKey):
             break
         else:
-            sharedKey += 1
+            return keyGen()
 
     factorOne = 0#--------Clear factors from RAM-------
     factorTwo = 0
@@ -182,9 +182,27 @@ def sendFile():
 
     placeHold.destroy()
 
+def encrypt(inputRaw):
+    inputRaw = re.findall("............", inputRaw)
+    dataIn = ""
+    for i in inputRaw:
+        dataIn += chr(int(i,2))
 
-def sendData(toSend, command = "None"):
-    #------------------------Hamming Code-----------------------
+    dataInList = list(dataIn)
+
+    pubKey = 4363*2539
+    sharedKey = 17
+    encry = []
+
+    privateKey = 651221
+    for m in dataInList:
+        message = ord(m)
+        encry.append(hex((message**sharedKey)%pubKey))
+
+    encry = "".join(encry)
+    return encry
+
+def hammingcode(toSend):
     inputRaw = [str(bin(ord(x))) for x in toSend]
     for x in inputRaw:
         if len(x) == 8:
@@ -212,33 +230,10 @@ def sendData(toSend, command = "None"):
 
         inputRaw[inputRaw.index(y)] = i
     inputRaw = "".join(inputRaw)
-    #------------------------RSA Encryption-----------------------
-    inputRaw = re.findall("............", inputRaw)
-    dataIn = ""
-    for i in inputRaw:
-        dataIn += chr(int(i,2))
+    return inputRaw
 
-    dataInList = list(dataIn)
-
-    pubKey = 4363*2539
-    sharedKey = 17
-    encry = []
-
-    privateKey = 651221
-    for m in dataInList:
-        message = ord(m)
-        encry.append(hex(powMod(message, sharedKey, pubKey)))
-
-    encry = "".join(encry)
-    logWrite("\n\nData sent to server:\n" + str(encry))
-    #------------------------Final Data Send-----------------------
-    finalMessage = encry + commServer + command + endMess
-    sock.send(finalMessage.encode())
-
-def decodeData(toDecode):
-    #------------------------Formating-----------------------
-    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
-    #------------------------Decryption-----------------------
+def decrypt(toDecode):
+#------------------------Decryption-----------------------
     pubKey = 4363*2539
     sharedKey = 17
 
@@ -250,8 +245,9 @@ def decodeData(toDecode):
         errorCheck.append(chr(powMod(int(c,16), privateKey, pubKey)))
 
     errorCheck = "".join(errorCheck)
+    return errorCheck
 
-    #------------------------Parity Checker-----------------------
+def inverseHamming(errorCheck):
     errorCheck = "".join([parityFix(bin(ord(x))) for x in errorCheck]).replace("b","")
 
     y = 0
@@ -290,8 +286,22 @@ def decodeData(toDecode):
     inputRaw = re.findall("........", inputRaw)
     for i in [int(x,2) for x in inputRaw]:
         output += chr(i)
-
     return output
+
+def sendData(toSend, command):
+    encry = encrypt(hammingcode(toSend))
+    #------------------------Final Data Send-----------------------
+    finalMessage = encry + commServer + command + endMess
+    logWrite("\n\nData sent to server:\n" + str(encry))
+    print(finalMessage)
+    sock.send(finalMessage.encode())
+
+
+def decodeData(toDecode):
+    #------------------------Formating-----------------------
+    toDecode = toDecode.replace(toDecode[toDecode.index(commServer):], "")
+
+    return inverseHamming(decrypt(toDecode))
 
 ##def reciveFile():
 ##    if command == "File":
@@ -316,9 +326,16 @@ if not(os.path.isfile("RSAKeysClient.csv")):
 
 keyFile = open("RSAKeysClient.csv", "r")
 keyData = keyFile.read().replace(",","").split("\n")
+
+global semi
 semi = keyData[0]
+
+global sharedKey
 sharedKey = keyData[1]
+
+global privateKey
 privateKey = keyData[2]
+
 keyFile.close()
 print(semi, sharedKey, privateKey)
 
@@ -381,8 +398,10 @@ class chLoginWindow(parentWindow):
         for regiUser in listUsers:
             if user == regiUser[0]:
                 print(regiUser[1][1:])
-                sendData(str(user) + ","+str(IP)+","+str(hashPassword(password, regiUser[1][1:])), "Password")
+                sendData(str(user) + ","+str(IP)+","+str(hashPassword(password, regiUser[1][1:])) + "," + str(semi), "Password")
+                time.sleep(1)
                 data = sock.recv(2048)
+                print(data.decode())
                 if data.decode() == "CLEAR":
                     self.openWindow("Main")
                 else:
@@ -407,7 +426,10 @@ class chRegisWindow(parentWindow):
         if confPass != password:
             print("Confirm password diffrent to password")
         else:
-            sendData(user+","+str(IP)+","+str(hashPassword(password)), "Register")
+            print(str(semi))
+            sendData(user+","+str(IP)+","+str(hashPassword(password)) + "," + str(semi), "Register")
+            time.sleep(1)
+            data = sock.recv(2048)
             if data.decode() == "CLEAR":
                     self.openWindow("Main")
             else:
@@ -424,9 +446,10 @@ class mainWindow(object):
 ##        self.frame.geometry("1280x720")
         Button(self.frame, text = "Ping", command = lambda:self.ping()).place(x = 45, y = 15)
         Button(self.frame, text = "Send File", command = sendFile).place(x = 45, y = 45)
-        Button(self.frame, text = "Delete File", command = lambda:self.ping()).place(x = 45, y = 75)
-        entPermissions = Entry(self.frame)
-        entPermissions.place(x = 45, y = 105)
+        Button(self.frame, text = "Get Files", command = lambda:self.getFiles()).place(x = 45, y = 75)
+        Button(self.frame, text = "Get Files", command = lambda:self.deleteFile()).place(x = 45, y = 105)
+##        entPermissions = Entry(self.frame)
+##        entPermissions.place(x = 45, y = 105)
         self.root.protocol("WM_DELETE_WINDOW", self.onClosing)
         self.frame.protocol("WM_DELETE_WINDOW", self.onClosing)
         self.openWindow()
@@ -441,6 +464,13 @@ class mainWindow(object):
 
     def ping(self):
         pass
+    def getFiles(self):
+        sendData("","Get")
+        time.sleep(1)
+        data = sock.recv(2048)
+        print(data.decode())
+    def deleteFile(self, fileName="toSend"):
+        sendData(fileName, "Delete")
 
     def onClosing(self):
         rootWindow.destroy()
